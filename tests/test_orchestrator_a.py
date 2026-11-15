@@ -40,7 +40,7 @@ else:
     pathlib.Path('test_solution.py').write_text('import solution\ndef test_value():\n    assert solution.value() == 42\n')
 if mode == 'long-output':
     print(json.dumps({'type':'thinking', 'text':'あ' * 300000}, ensure_ascii=False))
-print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':'完' * 300000 if mode == 'long-output' else 'completed'}, ensure_ascii=False))
+print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':('完' * 300000 + '\u2028\u2029') if mode == 'long-output' else 'completed'}, ensure_ascii=False))
 '''
 
 

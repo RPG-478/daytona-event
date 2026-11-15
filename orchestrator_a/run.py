@@ -40,7 +40,7 @@ def signal_group(pid, sig):
 
 
 def dsh_final(stdout):
-    for line in reversed(stdout.splitlines()):
+    for line in reversed(stdout.split("\n")):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
