@@ -1,0 +1,2 @@
+daytona==0.231.1
+pytest
