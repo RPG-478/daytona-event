@@ -1,0 +1,18 @@
+{
+  "name": "daytona-hello",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=nosana.env server.mjs",
+    "dev": "node --watch --env-file-if-exists=.env --env-file-if-exists=nosana.env server.mjs",
+    "check:nosana": "node --env-file-if-exists=.env --env-file-if-exists=nosana.env scripts/check-nosana.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@daytona/sdk": "^0.231.1"
+  }
+}

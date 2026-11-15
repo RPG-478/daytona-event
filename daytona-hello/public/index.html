@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Loop</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2230; --muted: #667085; --border: #e2e5eb;
+    --accent: #3b5bdb; --code-bg: #f1f3f6;
+    --ok: #1f8a4c; --ok-bg: #e3f5ea; --ng: #c92a2a; --ng-bg: #fdeaea;
+    --warn: #b35c00; --warn-bg: #fff1dd; --run: #3b5bdb; --run-bg: #e7ecff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1a1e27; --text: #e5e8ef; --muted: #98a1b3; --border: #2c3240;
+      --accent: #7c94ff; --code-bg: #11141a;
+      --ok: #5fd08f; --ok-bg: #173323; --ng: #ff7b7b; --ng-bg: #3a1b1d;
+      --warn: #ffb35c; --warn-bg: #3a2a14; --run: #8fa3ff; --run-bg: #1f2747;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, -apple-system, "Hiragino Sans", sans-serif; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header span { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; gap: 16px; padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+  h2 { font-size: 14px; margin: 0 0 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  input, select, textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font: inherit; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; margin-top: 16px; padding: 10px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .samples { display: flex; gap: 6px; flex-wrap: wrap; }
+  .samples button { font-size: 12px; padding: 4px 9px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .err { color: var(--ng); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+  .s-passed, .s-pass { color: var(--ok); background: var(--ok-bg); }
+  .s-failed, .s-error, .s-test_fail, .s-compile_error, .s-no_tests, .s-api_error, .s-empty_response, .s-bad_response { color: var(--ng); background: var(--ng-bg); }
+  .s-timeout, .s-cancelled, .s-aborted { color: var(--warn); background: var(--warn-bg); }
+  .s-running, .s-queued, .s-generating, .s-executing { color: var(--run); background: var(--run-bg); }
+  .status-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .status-head .meta { color: var(--muted); font-size: 12px; }
+  .status-head .spacer { flex: 1; }
+  .reason { margin: 10px 0 0; }
+  .steps { display: flex; gap: 4px; margin: 14px 0 4px; flex-wrap: wrap; }
+  .steps div { flex: 1; min-width: 70px; text-align: center; font-size: 11.5px; padding: 5px 4px; border-radius: 5px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+  .steps div.on { background: var(--run-bg); color: var(--run); border-color: transparent; font-weight: 600; }
+  details { border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+  summary { padding: 9px 12px; cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  summary .sum { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  details > div { padding: 0 12px 12px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow: auto; max-height: 420px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 4px 0 0; white-space: pre; }
+  h3 { font-size: 12px; color: var(--muted); margin: 12px 0 2px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  h3 button { font-size: 11px; padding: 2px 8px; }
+  .events { font: 12px/1.6 ui-monospace, Menlo, monospace; color: var(--muted); max-height: 220px; overflow: auto; }
+  .events time { margin-right: 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .history { margin-top: 16px; }
+  .history ul { list-style: none; padding: 0; margin: 0; }
+  .history li { display: flex; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
+  .history li:hover { background: var(--bg); }
+  .history li .when { color: var(--muted); margin-left: auto; font-size: 11.5px; }
+  .mockline { font-size: 12px; color: var(--warn); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>テスト自動生成・修正ループ</h1>
+  <span>対象コード → テスト生成 → Daytona で pytest → 失敗ログで修正</span>
+</header>
+<main>
+  <div>
+    <section>
+      <h2>対象コード</h2>
+      <div class="samples" id="samples"></div>
+      <label for="filename">ファイル名(import 名になる)</label>
+      <input id="filename" value="calc.py" autocomplete="off">
+      <label for="code">コード(Python・単一ファイル)</label>
+      <textarea id="code" rows="16" spellcheck="false"></textarea>
+      <label for="instructions">追加の指示(任意)</label>
+      <textarea id="instructions" rows="2" placeholder="例: 0 除算の挙動も確認する"></textarea>
+      <div class="row">
+        <div>
+          <label for="generator">テスト生成</label>
+          <select id="generator"></select>
+        </div>
+        <div>
+          <label for="runner">実行環境</label>
+          <select id="runner"></select>
+        </div>
+      </div>
+      <div id="scenarioBox">
+        <label for="scenario">モックのシナリオ</label>
+        <select id="scenario"></select>
+      </div>
+      <div class="hint" id="dshNote" hidden>DSH は Daytona サンドボックス内で生成・実行・修正をまとめて行います。対象コードは solution.py として置かれ、テストは import solution で書かれます。結果は終了時にまとめて表示されます。</div>
+      <div class="hint" id="limits"></div>
+      <button class="primary" id="start">実行する</button>
+      <div class="err" id="formError"></div>
+    </section>
+    <section class="history">
+      <h2>履歴</h2>
+      <ul id="history"></ul>
+    </section>
+  </div>
+  <section id="result"><div class="empty">左で対象コードを入力して「実行する」を押してください</div></section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id)
+const el = (tag, props = {}, ...children) => {
+  const n = Object.assign(document.createElement(tag), props)
+  for (const c of children) if (c != null) n.append(c)
+  return n
+}
+
+const STATUS_LABEL = {
+  queued: '待機中', running: '実行中', passed: '成功', failed: '失敗(上限到達)', timeout: 'タイムアウト',
+  error: 'エラー', cancelled: '中止',
+  generating: '生成中', executing: '実行中', pass: '合格', test_fail: 'テスト失敗', compile_error: '収集・構文エラー',
+  no_tests: 'テスト0件', api_error: 'API エラー', empty_response: '空応答', bad_response: '応答形式不正', aborted: '中断',
+}
+const PHASES = [['preparing', '環境準備'], ['generating', 'テスト生成'], ['executing', 'pytest 実行'], ['cleanup', '後始末']]
+const GEN_LABEL = { mock: 'モック', nosana: 'Nosana(直接)', dsh: 'DSH + Nosana' }
+const RUN_LABEL = { mock: 'モック(実行しない)', daytona: 'Daytona' }
+
+const SAMPLES = {
+  'calc.py': `def add(a, b):
+    return a + b
+
+
+def divide(a, b):
+    """b が 0 のときは ValueError を送出する"""
+    if b == 0:
+        raise ValueError("division by zero")
+    return a / b
+
+
+def clamp(x, lo, hi):
+    """x を [lo, hi] の範囲に収める"""
+    if lo > hi:
+        raise ValueError("lo must be <= hi")
+    return max(lo, min(x, hi))
+`,
+  'text_utils.py': `import re
+
+
+def slugify(text: str) -> str:
+    """英数字以外をハイフンにし、小文字化する。前後のハイフンは除く"""
+    text = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
+    return text.lower()
+
+
+def word_count(text: str) -> int:
+    """空白区切りの単語数を返す"""
+    return len(text.split())
+`,
+  'stack.py': `class Stack:
+    def __init__(self):
+        self._items = []
+
+    def push(self, item):
+        self._items.append(item)
+
+    def pop(self):
+        if not self._items:
+            raise IndexError("pop from empty stack")
+        return self._items.pop()
+
+    def peek(self):
+        if not self._items:
+            return None
+        return self._items[-1]
+
+    def __len__(self):
+        return len(self._items)
+`,
+}
+
+let cfg = null
+let current = null   // 表示中の run id
+let source = null    // EventSource
+let lastRun = null
+const openDetails = new Set()
+
+function badge(status) {
+  return el('span', { className: `badge s-${status}`, textContent: STATUS_LABEL[status] ?? status })
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+  return body
+}
+
+async function init() {
+  for (const name of Object.keys(SAMPLES)) {
+    $('samples').append(el('button', { type: 'button', textContent: `サンプル: ${name}`, onclick: () => {
+      $('filename').value = name; $('code').value = SAMPLES[name]
+    } }))
+  }
+  $('code').value = SAMPLES['calc.py']
+
+  cfg = await api('/api/config')
+  fillSelect('generator', cfg.generators, GEN_LABEL)
+  fillSelect('runner', cfg.runners, RUN_LABEL)
+  for (const [k, v] of Object.entries(cfg.mockScenarios)) $('scenario').append(el('option', { value: k, textContent: v }))
+  $('limits').textContent = `上限: 試行 ${cfg.limits.maxAttempts} 回 / 全体 ${cfg.limits.runTimeoutSec} 秒 / pytest 1回 ${cfg.limits.testTimeoutSec} 秒`
+  $('generator').onchange = syncForm
+  syncForm()
+
+  $('start').onclick = start
+  refreshHistory()
+  const fromHash = location.hash.slice(1)
+  if (fromHash) show(fromHash)
+}
+
+function fillSelect(id, items, labels) {
+  for (const [name, v] of Object.entries(items)) {
+    const text = (labels[name] ?? name) + (v.ready ? '' : `(未設定: ${v.missing.join(', ')})`)
+    $(id).append(el('option', { value: name, textContent: text, disabled: !v.ready }))
+  }
+}
+
+function syncForm() {
+  const gen = $('generator').value
+  $('scenarioBox').hidden = gen !== 'mock'
+  const need = cfg.generators[gen]?.requiresRunner
+  if (need) $('runner').value = need
+  $('runner').disabled = Boolean(need)
+  $('dshNote').hidden = gen !== 'dsh'
+}
+
+async function start() {
+  $('formError').textContent = ''
+  $('start').disabled = true
+  try {
+    const run = await api('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        filename: $('filename').value, code: $('code').value, instructions: $('instructions').value,
+        generator: $('generator').value, runner: $('runner').value, scenario: $('scenario').value,
+      }),
+    })
+    show(run.id)
+    refreshHistory()
+  } catch (e) {
+    $('formError').textContent = e.message
+  } finally {
+    $('start').disabled = false
+  }
+}
+
+function show(id) {
+  if (source) source.close()
+  if (current !== id) openDetails.clear()
+  current = id
+  location.hash = id
+  source = new EventSource(`/api/runs/${id}/events`)
+  source.onmessage = ev => {
+    const run = JSON.parse(ev.data)
+    render(run)
+    if (run.finishedAt) { source.close(); refreshHistory() }
+  }
+  source.onerror = () => {
+    source.close()
+    $('result').replaceChildren(el('div', { className: 'empty', textContent: 'この実行は見つかりません(サーバー再起動で消えた可能性があります)' }))
+  }
+}
+
+function fmtTime(iso) { return new Date(iso).toLocaleTimeString('ja-JP') }
+function elapsed(run) {
+  const end = run.finishedAt ? new Date(run.finishedAt) : new Date()
+  return Math.round((end - new Date(run.createdAt)) / 1000)
+}
+
+function metaText(run) {
+  return `${run.input.filename} ・ 試行 ${run.attempt}/${run.maxAttempts} ・ ${elapsed(run)} 秒 ・ ` +
+    `${GEN_LABEL[run.input.generator]} + ${RUN_LABEL[run.input.runner]}`
+}
+
+function codeBlock(title, text) {
+  return [
+    el('h3', {}, title, el('button', { type: 'button', textContent: 'コピー', onclick: e => {
+      navigator.clipboard?.writeText(text).then(() => { e.target.textContent = 'コピーしました' }).catch(() => {})
+    } })),
+    el('pre', { textContent: text }),
+  ]
+}
+
+function render(run) {
+  if (run.id !== current) return
+  lastRun = run
+  const finished = Boolean(run.finishedAt)
+  const isMock = run.input.generator === 'mock' || run.input.runner === 'mock'
+
+  const head = el('div', { className: 'status-head' },
+    badge(run.status),
+    el('span', { className: 'meta', id: 'meta', textContent: metaText(run) }),
+    el('span', { className: 'spacer' }),
+    finished ? null : el('button', { type: 'button', textContent: '中止', onclick: async e => {
+      e.target.disabled = true
+      await api(`/api/runs/${run.id}/cancel`, { method: 'POST' }).catch(() => {})
+    } }),
+  )
+
+  const steps = el('div', { className: 'steps' },
+    ...PHASES.map(([k, label]) => el('div', { className: run.phase === k ? 'on' : '', textContent: label })))
+
+  const parts = [head]
+  if (isMock) parts.push(el('div', { className: 'mockline', textContent: 'モックを含む実行です。表示されるテストやログは実際のモデル出力・実行結果ではありません。' }))
+  if (!finished) parts.push(steps)
+  if (!finished && run.input.generator === 'dsh' && run.phase === 'executing') {
+    parts.push(el('div', { className: 'hint', textContent: 'DSH が生成・実行・修正を進めています。試行ごとの結果は終了時にまとめて届きます。' }))
+  }
+  if (run.reason) parts.push(el('p', { className: 'reason', textContent: run.reason }))
+  if (run.sandbox) {
+    const s = run.sandbox
+    const txt = `サンドボックス: ${s.id ?? '-'} ・ ${s.deleted ? '削除済み' : s.deleteError ? `削除失敗: ${s.deleteError}` : '使用中'}`
+    parts.push(el('div', { className: 'hint', textContent: txt }))
+  }
+
+  if (run.finalTest) parts.push(...codeBlock('最終的なテスト', run.finalTest))
+
+  parts.push(el('h2', { textContent: '試行', style: 'margin-top:18px' }))
+  if (run.attempts.length === 0) parts.push(el('div', { className: 'hint', textContent: 'まだ試行はありません' }))
+  for (const a of [...run.attempts].reverse()) {
+    const key = `${run.id}:${a.n}`
+    const d = el('details', { open: openDetails.has(key) || (a === run.attempts.at(-1) && !openDetails.has(key + ':closed')) })
+    d.addEventListener('toggle', () => {
+      if (d.open) { openDetails.add(key); openDetails.delete(key + ':closed') }
+      else { openDetails.delete(key); openDetails.add(key + ':closed') }
+    })
+    d.append(el('summary', {}, el('strong', { textContent: `#${a.n}` }), badge(a.status),
+      el('span', { className: 'sum', textContent: a.summary || '' })))
+    const body = el('div')
+    if (a.test) body.append(...codeBlock('生成されたテスト', a.test))
+    if (a.log) body.append(...codeBlock(a.test ? '実行ログ' : 'モデルの応答', a.log))
+    if (!a.test && !a.log) body.append(el('div', { className: 'hint', textContent: '処理中…' }))
+    d.append(body)
+    parts.push(d)
+  }
+
+  parts.push(el('h2', { textContent: '進行ログ', style: 'margin-top:18px' }))
+  const ev = el('div', { className: 'events' },
+    ...run.events.map(e => el('div', {}, el('time', { textContent: fmtTime(e.at) }), e.msg)))
+  parts.push(ev)
+
+  $('result').replaceChildren(...parts)
+  ev.scrollTop = ev.scrollHeight
+}
+
+async function refreshHistory() {
+  const list = await api('/api/runs').catch(() => [])
+  $('history').replaceChildren(...(list.length ? list.map(r => el('li', { onclick: () => show(r.id) },
+    badge(r.status), el('span', { textContent: `${r.filename}(${GEN_LABEL[r.generator]} + ${RUN_LABEL[r.runner]})` }),
+    el('span', { className: 'when', textContent: fmtTime(r.createdAt) }))) : [el('li', { className: 'hint', textContent: 'まだありません' })]))
+}
+
+// 実行中は経過秒数だけを1秒ごとに更新する(全体を再描画するとスクロール位置が崩れる)
+setInterval(() => { if (lastRun && !lastRun.finishedAt && $('meta')) $('meta').textContent = metaText(lastRun) }, 1000)
+
+init().catch(e => { $('formError').textContent = `初期化に失敗: ${e.message}` })
+</script>
+</body>
+</html>
