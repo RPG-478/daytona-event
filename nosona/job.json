@@ -1,0 +1,45 @@
+{
+  "version": "0.1",
+  "type": "container",
+  "ops": [
+    {
+      "type": "container/run",
+      "id": "server",
+      "args": {
+        "image": "docker.io/ollama/ollama:latest",
+        "entrypoint": ["/bin/sh"],
+        "cmd": ["-c", "ollama serve & sleep 5 && ollama pull $MODEL && wait"],
+        "env": {
+          "MODEL": "%%global.variables.MODEL%%"
+        },
+        "gpu": true,
+        "expose": [
+          {
+            "port": 11434,
+            "health_checks": [
+              {
+                "type": "http",
+                "path": "/api/tags",
+                "method": "GET",
+                "expected_status": 200,
+                "continuous": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "deployment_id": "J2QRQ5rcTSMkeaAbX6fP799oRCypHRScESkids9r4dfh",
+  "meta": {
+    "trigger": "deployment-manager",
+    "system_requirements": {
+      "vram_total_mb": 21504
+    }
+  },
+  "global": {
+    "variables": {
+      "MODEL": "glm-4.7-flash:q4_K_M"
+    }
+  }
+}
