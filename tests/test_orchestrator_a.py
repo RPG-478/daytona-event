@@ -8,7 +8,7 @@ from orchestrator_a.run import execute, make_patch
 
 
 FAKE = r'''#!/usr/bin/env python3
-import os, pathlib, sys, time
+import json, os, pathlib, sys, time
 assert sys.argv[1:3] == ['--profile', 'headless']
 assert pathlib.Path(sys.argv[4]).is_file()
 mode = os.environ.get('FAKE_MODE', 'success')
@@ -16,11 +16,13 @@ if mode == 'timeout':
     time.sleep(10)
 if mode == 'error':
     print('dsh: MISSING_CREDENTIAL: secret-diagnostic', file=sys.stderr)
+    print(json.dumps({'type':'final', 'reason':{'kind':'error', 'error':{'code':'AUTH'}}, 'text':''}))
     sys.exit(2)
 counter = pathlib.Path('counter')
 n = int(counter.read_text()) + 1 if counter.exists() else 1
 counter.write_text(str(n))
 if mode == 'missing':
+    print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':'completed'}))
     sys.exit(0)
 if mode == 'modify-source':
     pathlib.Path('solution.py').write_text('def value(): return 42\n')
@@ -28,13 +30,15 @@ if mode == 'no-tests':
     pathlib.Path('test_solution.py').write_text('# no tests\n')
 elif mode == 'all-skipped':
     pathlib.Path('test_solution.py').write_text('import pytest\n@pytest.mark.skip(reason="skip")\ndef test_skipped(): pass\n')
+elif mode == 'xpassed':
+    pathlib.Path('test_solution.py').write_text('import pytest\n@pytest.mark.xfail(strict=False)\ndef test_xpass(): pass\n')
 elif mode == 'repair' and n == 1:
     pathlib.Path('test_solution.py').write_text('def test_value():\n    assert False\n')
 else:
     if mode == 'repair':
         assert 'previous pytest run' in sys.argv[-1]
     pathlib.Path('test_solution.py').write_text('import solution\ndef test_value():\n    assert solution.value() == 42\n')
-print('completed')
+print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':'completed'}))
 '''
 
 
@@ -85,6 +89,11 @@ def test_all_skipped_is_not_success(monkeypatch, tmp_path):
     assert any('No test passed' in line for line in result['logs'])
 
 
+def test_xpass_is_not_success(monkeypatch, tmp_path):
+    result = run(setup(monkeypatch, tmp_path, 'xpassed'), attempts=1)
+    assert result['status'] == 'failed'
+
+
 def test_modified_source_not_success(monkeypatch, tmp_path):
     result = run(setup(monkeypatch, tmp_path, 'modify-source'))
     assert result['status'] == 'failed'
@@ -94,7 +103,7 @@ def test_modified_source_not_success(monkeypatch, tmp_path):
 def test_dsh_error_does_not_expose_stderr(monkeypatch, tmp_path):
     result = run(setup(monkeypatch, tmp_path, 'error'))
     assert result['status'] == 'failed'
-    assert result['error_code'] == 'MISSING_CREDENTIAL'
+    assert result['error_code'] == 'AUTH'
     assert 'secret-diagnostic' not in str(result)
 
 

@@ -4,17 +4,28 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import sys
 import tempfile
 import time
-import xml.etree.ElementTree as ET
 
 MAX_SOURCE = 100_000
 MAX_LOG = 16_000
 MAX_TEST = 100_000
+REPORT_PLUGIN = '''import json
+import os
+
+passed = 0
+def pytest_runtest_logreport(report):
+    global passed
+    if report.when == "call" and report.passed and not hasattr(report, "wasxfail"):
+        passed += 1
+
+def pytest_sessionfinish(session, exitstatus):
+    with open(os.environ["ORCH_PYTEST_REPORT"], "w", encoding="utf-8") as output:
+        json.dump({"passed": passed}, output)
+'''
 
 
 def clipped(text, limit=MAX_LOG):
@@ -28,21 +39,34 @@ def signal_group(pid, sig):
         pass
 
 
-def dsh_error(stderr):
-    allowed = {"MISSING_CREDENTIAL", "UNKNOWN_MODEL", "TRANSPORT", "UNSUPPORTED_REASONING_EFFORT"}
-    matches = re.findall(r"(?m)^dsh:\s+([A-Z][A-Z0-9_]*):", stderr)
-    return next((code for code in matches if code in allowed), None)
+def dsh_final(stdout):
+    for line in reversed(stdout.splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "final":
+            return event
+    return {}
+
+
+def dsh_error(final):
+    allowed = {"AUTH", "MISSING_CREDENTIAL", "UNKNOWN_MODEL", "TRANSPORT", "UNSUPPORTED_REASONING_EFFORT"}
+    reason = final.get("reason")
+    error = reason.get("error") if isinstance(reason, dict) and reason.get("kind") == "error" else None
+    code = error.get("code") if isinstance(error, dict) else None
+    return code if code in allowed else None
 
 
 def passed_count(report):
-    # A zero pytest exit code can also mean every collected test was skipped.
-    root = ET.parse(report).getroot()
-    suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-    return sum(max(0, int(s.attrib.get("tests", 0)) - int(s.attrib.get("skipped", 0))
-                   - int(s.attrib.get("failures", 0)) - int(s.attrib.get("errors", 0))) for s in suites)
+    data = json.loads(report.read_text(encoding="utf-8"))
+    count = data.get("passed") if isinstance(data, dict) else None
+    if type(count) is not int or count < 0:
+        raise ValueError("invalid pytest passed count")
+    return count
 
 
-def run_process(argv, cwd, env, deadline):
+def run_process(argv, cwd, env, deadline, stdout_tail=False):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise TimeoutError
@@ -62,9 +86,13 @@ def run_process(argv, cwd, env, deadline):
         finally:
             # The CLI may leave background subprocesses after it exits.
             signal_group(process.pid, signal.SIGKILL)
-        out.seek(0)
+        if stdout_tail:
+            out.seek(0, os.SEEK_END)
+            out.seek(max(0, out.tell() - 256_000))
+        else:
+            out.seek(0)
         err.seek(0)
-        return process.returncode, clipped(out.read(MAX_LOG + 1)), clipped(err.read(MAX_LOG + 1))
+        return process.returncode, out.read(256_000) if stdout_tail else clipped(out.read(MAX_LOG + 1)), clipped(err.read(MAX_LOG + 1))
 
 
 def make_patch(url, model):
@@ -106,16 +134,20 @@ def execute(source, url, model, dsh, attempts, timeout, on_event=lambda _: None)
                           "behavior, including edge cases. Import the solution module. Do not modify "
                           "solution.py. Do not install packages or use the network. "
                           "When done, briefly explain what you tested.\n" + feedback)
-                code, stdout, stderr = run_process([dsh, "--profile", "headless", "--patch", str(patch), prompt], workspace, env, deadline)
-                if stdout:
-                    log("DSH: " + stdout)
+                code, stdout, stderr = run_process([dsh, "--profile", "headless", "--patch", str(patch), "--json", prompt], workspace, env, deadline, stdout_tail=True)
+                final = dsh_final(stdout)
+                if isinstance(final.get("text"), str) and final["text"]:
+                    log("DSH: " + final["text"])
                 if stderr:
                     # DSH stderr may contain reasoning or secrets. Do not forward it to callers.
                     log("DSH reported diagnostics on stderr (not included in logs).")
                 if code != 0:
-                    error_code = dsh_error(stderr)
+                    error_code = dsh_error(final)
                     result["error_code"] = error_code or "DSH_ERROR"
                     result["message"] = f"DSH exited with code {code} ({result['error_code']})."
+                    break
+                if not isinstance(final.get("reason"), dict) or final["reason"].get("kind") != "completed":
+                    result["message"] = "DSH did not return a completed final event."
                     break
                 if (workspace / "solution.py").is_symlink() or (workspace / "solution.py").read_text(encoding="utf-8") != source:
                     result["message"] = "DSH changed the source file; refusing to judge the result."
@@ -131,9 +163,12 @@ def execute(source, url, model, dsh, attempts, timeout, on_event=lambda _: None)
                 # Do not pass the model credential to the independently run tests.
                 test_env = env.copy()
                 test_env.pop("NOSANA_API_KEY", None)
-                report = root / "pytest-result.xml"
+                report = root / "pytest-result.json"
                 report.unlink(missing_ok=True)
-                code, stdout, stderr = run_process([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={report}", "test_solution.py"], workspace, test_env, deadline)
+                (root / "orch_report_plugin.py").write_text(REPORT_PLUGIN, encoding="utf-8")
+                test_env["ORCH_PYTEST_REPORT"] = str(report)
+                test_env["PYTHONPATH"] = str(root)
+                code, stdout, stderr = run_process([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "orch_report_plugin", "test_solution.py"], workspace, test_env, deadline)
                 test_output = clipped(stdout + ("\n" + stderr if stderr else ""))
                 log(f"pytest exited {code}:\n{test_output}")
                 if (workspace / "solution.py").is_symlink() or (workspace / "solution.py").read_text(encoding="utf-8") != source:
@@ -142,7 +177,7 @@ def execute(source, url, model, dsh, attempts, timeout, on_event=lambda _: None)
                 if code == 0:
                     try:
                         passed = passed_count(report)
-                    except (OSError, ET.ParseError, ValueError):
+                    except (OSError, ValueError):
                         result["message"] = "pytest result report is missing or invalid."
                         break
                     if passed > 0:
