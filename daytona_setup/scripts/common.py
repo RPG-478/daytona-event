@@ -11,11 +11,12 @@ import sys
 
 from daytona import Daytona
 
-# このラベルが付いたサンドボックスだけを「自分たちのもの」として扱う（一括削除の対象）。
+# このラベルが付いたサンドボックスだけを「このフォルダのスクリプトが作ったもの」として扱う。
+# daytona-hello（Web UI）が作るサンドボックスにはラベルが付かないので、一括削除の対象にならない。
 LABELS = {"project": "hackathon-dsh", "role": "test-runner"}
 
-# サンドボックスの中で DSH が設定を読む場所。
-DSH_PROFILE_DIR = ".dsh/profiles/headless"
+# daytona-hello/src/config.mjs と同じ既定値。
+DEFAULT_NOSANA_BASE_URL = "https://inference.nosana.com/v1"
 
 
 def client() -> Daytona:
@@ -25,7 +26,11 @@ def client() -> Daytona:
     return Daytona()
 
 
+def nosana_base_url() -> str:
+    return (os.environ.get("NOSANA_BASE_URL") or DEFAULT_NOSANA_BASE_URL).rstrip("/")
+
+
 def bash(sandbox, script: str, *, cwd: str | None = None, timeout: int = 120):
     """サンドボックス内で bash として実行し、(終了コード, 出力) を返す。"""
-    response = sandbox.process.exec(f"bash -lc {shlex.quote(script)}", cwd=cwd, timeout=timeout)
+    response = sandbox.process.exec(f"bash -c {shlex.quote(script)}", cwd=cwd, timeout=timeout)
     return response.exit_code, response.result
