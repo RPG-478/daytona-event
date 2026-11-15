@@ -1,0 +1,4 @@
+.env
+nosana.env
+node_modules/
+!.env.example
