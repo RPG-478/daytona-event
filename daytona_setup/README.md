@@ -21,10 +21,10 @@
 
 Daytona の文書（[Network Limits](https://www.daytona.io/docs/en/network-limits/)）によると、組織の Tier 1・2 は外向きの通信が制限され、サンドボックス単位の設定では解除できない。パッケージ配布元などの必須サービスだけが届く。Tier 3（500 ドルの入金が条件）以上は既定で全開になる。症状はこの制限と一致する。チームの組織がどの Tier かは未確認。
 
-`job.json` で自前デプロイする接続先（`*.node.k8s.prd.nos.ci`）も、同じ制限にかかる可能性がある。URL が決まったら次で確かめられる:
+`job.json` で自前デプロイした接続先（[`endpoint.md`](../endpoint.md) の `*.node.k8s.prd.nos.ci`）も、同じ制限にかかる可能性がある。次で確かめられる:
 
 ```sh
-NOSANA_BASE_URL='https://<サービスURL>/v1' .venv/bin/python scripts/check_network.py
+NOSANA_BASE_URL="$(cat ../endpoint.md)/v1" .venv/bin/python scripts/check_network.py
 ```
 
 ## 環境変数名
@@ -34,7 +34,7 @@ NOSANA_BASE_URL='https://<サービスURL>/v1' .venv/bin/python scripts/check_ne
 | 名前 | 内容 |
 |---|---|
 | `DAYTONA_API_KEY` | Daytona の API キー。スクリプトを動かす側だけに置く |
-| `NOSANA_BASE_URL` | OpenAI 互換の接続先。`/v1` まで含める。省略時は `https://inference.nosana.com/v1` |
+| `NOSANA_BASE_URL` | OpenAI 互換の接続先。`/v1` まで含める（自前デプロイなら `endpoint.md` の URL に `/v1` を足す）。省略時は `https://inference.nosana.com/v1` |
 | `NOSANA_MODEL` | モデルID（`job.json` の場合は `glm-4.7-flash:q4_K_M`） |
 | `NOSANA_API_KEY` | Nosana の鍵。下の「鍵の渡し方」を参照 |
 
@@ -57,7 +57,7 @@ export DAYTONA_API_KEY='<値>'
 
 ```sh
 .venv/bin/python scripts/create_sandbox.py
-NOSANA_BASE_URL='<URL>' NOSANA_MODEL='<モデルID>' .venv/bin/python scripts/create_sandbox.py --nosana
+NOSANA_BASE_URL="$(cat ../endpoint.md)/v1" NOSANA_MODEL='glm-4.7-flash:q4_K_M' .venv/bin/python scripts/create_sandbox.py --nosana
 ```
 
 実行。標準出力は `logs/<実行名>/stdout.log`、標準エラーは `stderr.log`、終了コードは `exit_code` とスクリプト自身の終了コードに入る（時間切れは 124）。送ったファイルはサンドボックス内の `~/work/` に置かれる:
