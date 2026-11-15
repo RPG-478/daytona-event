@@ -38,7 +38,9 @@ else:
     if mode == 'repair':
         assert 'previous pytest run' in sys.argv[-1]
     pathlib.Path('test_solution.py').write_text('import solution\ndef test_value():\n    assert solution.value() == 42\n')
-print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':'completed'}))
+if mode == 'long-output':
+    print(json.dumps({'type':'thinking', 'text':'あ' * 300000}, ensure_ascii=False))
+print(json.dumps({'type':'final', 'reason':{'kind':'completed'}, 'text':'完' * 300000 if mode == 'long-output' else 'completed'}, ensure_ascii=False))
 '''
 
 
@@ -60,6 +62,12 @@ def test_success(monkeypatch, tmp_path):
     assert result['status'] == 'succeeded'
     assert result['attempts'] == 1
     assert 'def test_value' in result['test_code']
+
+
+def test_large_utf8_output_and_final_event(monkeypatch, tmp_path):
+    result = run(setup(monkeypatch, tmp_path, 'long-output'))
+    assert result['status'] == 'succeeded'
+    assert any('[truncated]' in line for line in result['logs'])
 
 
 def test_failed_test_is_repaired(monkeypatch, tmp_path):

@@ -66,11 +66,11 @@ def passed_count(report):
     return count
 
 
-def run_process(argv, cwd, env, deadline, stdout_tail=False):
+def run_process(argv, cwd, env, deadline, stdout_json=False):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise TimeoutError
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as out, tempfile.TemporaryFile(mode="w+", encoding="utf-8") as err:
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as out, tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err:
         process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                    stdout=out, stderr=err, start_new_session=True)
         try:
@@ -86,13 +86,20 @@ def run_process(argv, cwd, env, deadline, stdout_tail=False):
         finally:
             # The CLI may leave background subprocesses after it exits.
             signal_group(process.pid, signal.SIGKILL)
-        if stdout_tail:
-            out.seek(0, os.SEEK_END)
-            out.seek(max(0, out.tell() - 256_000))
-        else:
-            out.seek(0)
+        out.seek(0)
         err.seek(0)
-        return process.returncode, out.read(256_000) if stdout_tail else clipped(out.read(MAX_LOG + 1)), clipped(err.read(MAX_LOG + 1))
+        if stdout_json:
+            final = {}
+            for line in out:
+                event = dsh_final(line)
+                if event:
+                    reason = event.get("reason")
+                    text = event.get("text")
+                    final = {"type": "final", "reason": reason, "text": clipped(text) if isinstance(text, str) else ""}
+            stdout = json.dumps(final, ensure_ascii=False)
+        else:
+            stdout = clipped(out.read(MAX_LOG + 1))
+        return process.returncode, stdout, clipped(err.read(MAX_LOG + 1))
 
 
 def make_patch(url, model):
@@ -134,7 +141,7 @@ def execute(source, url, model, dsh, attempts, timeout, on_event=lambda _: None)
                           "behavior, including edge cases. Import the solution module. Do not modify "
                           "solution.py. Do not install packages or use the network. "
                           "When done, briefly explain what you tested.\n" + feedback)
-                code, stdout, stderr = run_process([dsh, "--profile", "headless", "--patch", str(patch), "--json", prompt], workspace, env, deadline, stdout_tail=True)
+                code, stdout, stderr = run_process([dsh, "--profile", "headless", "--patch", str(patch), "--json", prompt], workspace, env, deadline, stdout_json=True)
                 final = dsh_final(stdout)
                 if isinstance(final.get("text"), str) and final["text"]:
                     log("DSH: " + final["text"])
